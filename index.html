@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pac-Man Multiple Ghosts & Levels with Preview</title>
+  <style>
+    body {
+      background: black;
+      margin: 0;
+      font-family: sans-serif;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #menu {
+      margin-top: 50px;
+      text-align: center;
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      flex-wrap: wrap;
+      max-width: 800px;
+    }
+    #levelSelector {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    #levelSelector p {
+      margin: 0 0 10px 0;
+      font-weight: bold;
+    }
+    #levelButtons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-width: 300px;
+    }
+    #levelButtons button {
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      background-color: #222;
+      border: 1px solid white;
+      color: white;
+      border-radius: 4px;
+      transition: background-color 0.3s;
+    }
+    #levelButtons button:hover {
+      background-color: #555;
+    }
+    #levelButtons button.selected {
+      background-color: yellow;
+      color: black;
+      font-weight: bold;
+      border-color: yellow;
+    }
+
+    #levelPreview {
+      width: 150px;
+      height: 150px;
+      display: grid;
+      grid-template-columns: repeat(10, 14px);
+      grid-template-rows: repeat(10, 14px);
+      gap: 1px;
+      background: #222;
+      border: 2px solid white;
+      border-radius: 6px;
+    }
+    .preview-cell {
+      width: 14px;
+      height: 14px;
+      background: #111;
+    }
+    .preview-wall {
+      background: blue;
+    }
+    .preview-path {
+      background: #222;
+    }
+    .preview-dot {
+      background: #222;
+      position: relative;
+    }
+    .preview-dot::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: white;
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    #game, #score, #timer {
+      display: none;
+    }
+    #game {
+      display: grid;
+      grid-template-columns: repeat(10, 30px);
+      grid-template-rows: repeat(10, 30px);
+      gap: 2px;
+      margin-top: 20px;
+    }
+    .cell {
+      width: 30px;
+      height: 30px;
+      background: #111;
+      position: relative;
+    }
+    .dot::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: white;
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .wall {
+      background: blue;
+    }
+    .pacman {
+      background: yellow;
+      border-radius: 50%;
+    }
+    .ghost {
+      background: red;
+      border-radius: 50%;
+    }
+    .ghost.ghost2 {
+      background: orange;
+    }
+    select, button {
+      padding: 10px;
+      font-size: 16px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    #info {
+      display: flex;
+      gap: 30px;
+      margin-top: 10px;
+      font-size: 18px;
+    }
+    #buttons {
+      margin-top: 10px;
+    }
+    #buttons button {
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="menu">
+    <div id="levelSelector">
+      <p>Select Level:</p>
+      <div id="levelButtons">
+        <!-- Кнопки для уровней вставятся скриптом -->
+      </div>
+      <div>
+        <label>Difficulty:
+          <select id="difficulty">
+            <option value="1000">Easy</option>
+            <option value="500" selected>Normal</option>
+            <option value="250">Hard</option>
+          </select>
+        </label>
+      </div>
+      <button onclick="startGame()">Start Game</button>
+    </div>
+    <div>
+      <p>Level Preview:</p>
+      <div id="levelPreview"></div>
+    </div>
+  </div>
+
+  <div id="info">
+    <div id="score">Score: 0</div>
+    <div id="timer">Time: 0s</div>
+  </div>
+
+  <div id="game"></div>
+
+  <div id="buttons" style="display:none;">
+    <button id="restartBtn" onclick="returnToMenu()" style="display:none;">New Game</button>
+    <button id="restartGameBtn" onclick="newGame()" style="display:none;">Restart Game</button>
+  </div>
+
+  <script>
+    const width = 10;
+    const game = document.getElementById('game');
+    const scoreDisplay = document.getElementById('score');
+    const timerDisplay = document.getElementById('timer');
+    const menu = document.getElementById('menu');
+    const difficultySelect = document.getElementById('difficulty');
+    const restartBtn = document.getElementById('restartBtn');
+    const restartGameBtn = document.getElementById('restartGameBtn');
+    const buttonsDiv = document.getElementById('buttons');
+    const levelButtonsDiv = document.getElementById('levelButtons');
+    const levelPreviewDiv = document.getElementById('levelPreview');
+
+    let cells = [];
+    let pacmanIndex;
+    let ghostIndices = [];
+    let ghostTimers = [];
+    let score = 0;
+    let gameTimer;
+    let seconds = 0;
+    let currentLevel = 0;
+    let totalDotsOnLevel = 0;
+
+    // 10 уровней с разными лабиринтами
+    const levels = [
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,0,0,1,
+          1,0,0,0,0,0,1,0,0,1,
+          1,0,1,1,1,0,1,0,1,1,
+          1,0,1,0,0,0,1,0,0,1,
+          1,0,1,0,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 11,
+        ghostsStart: [88, 98]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,1,0,0,0,1,0,0,1,
+          1,0,1,0,1,0,1,0,1,1,
+          1,0,0,0,1,0,0,0,0,1,
+          1,1,1,0,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,0,1,1,1,1,0,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,1,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 21,
+        ghostsStart: [88, 77]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,0,1,0,0,0,1,0,1,
+          1,1,0,1,0,1,0,1,0,1,
+          1,0,0,0,0,1,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,1,1,1,1,1,0,1,0,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 31,
+        ghostsStart: [88, 45]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,0,0,0,0,1,0,0,1,
+          1,0,1,1,1,0,1,0,1,1,
+          1,0,0,0,1,0,0,0,0,1,
+          1,1,1,0,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,0,1,1,1,1,0,1,0,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 12,
+        ghostsStart: [88, 98]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,1,0,0,0,1,0,0,1,
+          1,0,1,0,1,0,1,0,1,1,
+          1,0,0,0,1,0,0,0,0,1,
+          1,1,1,0,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,0,1,1,1,1,0,1,0,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 22,
+        ghostsStart: [77, 66]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,0,1,0,0,0,1,0,1,
+          1,1,0,1,0,1,0,1,0,1,
+          1,0,0,0,0,1,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,1,1,1,1,1,0,1,0,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 32,
+        ghostsStart: [45, 52]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,0,1,1,1,0,0,1,
+          1,0,0,0,0,0,1,0,0,1,
+          1,1,1,1,1,0,1,0,1,1,
+          1,0,0,0,0,0,1,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 11,
+        ghostsStart: [88, 97]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,0,0,1,
+          1,0,0,0,0,0,1,0,0,1,
+          1,0,1,1,1,0,1,0,1,1,
+          1,0,1,0,0,0,1,0,0,1,
+          1,0,1,0,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,0,0,1,
+          1,0,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 14,
+        ghostsStart: [88, 86]
+      },
+      {
+        layout: [
+          1,1,1,1,1,1,1,1,1,1,
+          1,0,1,0,0,0,1,0,0,1,
+          1,0,1,0,1,0,1,0,1,1,
+          1,0,0,0,1,0,0,0,0,1,
+          1,1,1,0,1,1,1,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,0,1,1,1,1,0,1,0,1,
+          1,0,0,0,0,0,0,1,0,1,
+          1,1,1,1,1,1,1,1,0,1,
+          1,1,1,1,1,1,1,1,1,1
+        ],
+        pacmanStart: 24,
+        ghostsStart: [77, 67]
+      }
+    ];
+
+    function drawGrid() {
+      game.innerHTML = '';
+      cells = [];
+      const layout = levels[currentLevel].layout;
+      layout.forEach((val, i) => {
+        const cell = document.createElement('div');
+        cell.classList.add('cell');
+        if (val === 1) cell.classList.add('wall');
+        else if (val === 0) cell.classList.add('dot');
+        game.appendChild(cell);
+        cells.push(cell);
+      });
+      cells[pacmanIndex].classList.add('pacman');
+      ghostIndices.forEach((gIndex, i) => {
+        cells[gIndex].classList.add('ghost');
+        if(i === 1) cells[gIndex].classList.add('ghost2');
+      });
+    }
+
+    function movePacman(e) {
+      cells[pacmanIndex].classList.remove('pacman');
+      let nextIndex = pacmanIndex;
+      if (e.key === 'ArrowUp') nextIndex -= width;
+      else if (e.key === 'ArrowDown') nextIndex += width;
+      else if (e.key === 'ArrowLeft') nextIndex -= 1;
+      else if (e.key === 'ArrowRight') nextIndex += 1;
+
+      if (
+        nextIndex >= 0 &&
+        nextIndex < cells.length &&
+        !cells[nextIndex].classList.contains('wall')
+      ) {
+        pacmanIndex = nextIndex;
+      }
+
+      if (cells[pacmanIndex].classList.contains('dot')) {
+        score += 10;
+        scoreDisplay.textContent = `Score: ${score}`;
+        cells[pacmanIndex].classList.remove('dot');
+        checkWin();
+      }
+
+      cells[pacmanIndex].classList.add('pacman');
+
+      if (ghostIndices.includes(pacmanIndex)) endGame(false);
+    }
+
+    function moveGhost(i) {
+      if (!ghostIndices[i]) return;
+      const directions = [-1, 1, -width, width];
+      let minDist = Infinity;
+      let bestMove = ghostIndices[i];
+
+      directions.forEach(dir => {
+        const target = ghostIndices[i] + dir;
+        if (
+          target >= 0 &&
+          target < cells.length &&
+          !cells[target].classList.contains('wall') &&
+          !ghostIndices.includes(target)
+        ) {
+          const dx = target % width - pacmanIndex % width;
+          const dy = Math.floor(target / width) - Math.floor(pacmanIndex / width);
+          const dist = Math.abs(dx) + Math.abs(dy);
+          if (dist < minDist) {
+            minDist = dist;
+            bestMove = target;
+          }
+        }
+      });
+
+      cells[ghostIndices[i]].classList.remove('ghost', 'ghost2');
+      ghostIndices[i] = bestMove;
+
+      cells[ghostIndices[i]].classList.add('ghost');
+      if(i === 1) cells[ghostIndices[i]].classList.add('ghost2');
+
+      if (ghostIndices[i] === pacmanIndex) {
+        endGame(false);
+      }
+    }
+
+    function checkWin() {
+      let dotsEaten = score / 10;
+      let totalDots = totalDotsOnLevel;
+      // Победа, если съели 30 или все точки, если точек меньше 30
+      if (dotsEaten >= 30 || dotsEaten >= totalDots) {
+        endGame(true);
+      }
+    }
+
+    function endGame(won) {
+      document.removeEventListener('keydown', movePacman);
+      clearInterval(gameTimer);
+      stopGhosts();
+      scoreDisplay.textContent = won
+        ? `You win! Final score: ${score}`
+        : `Game Over! Final score: ${score}`;
+      restartBtn.style.display = 'inline-block';
+      restartGameBtn.style.display = 'inline-block';
+      buttonsDiv.style.display = 'block';
+    }
+
+    function startTimer() {
+      seconds = 0;
+      timerDisplay.textContent = `Time: 0s`;
+      gameTimer = setInterval(() => {
+        seconds++;
+        timerDisplay.textContent = `Time: ${seconds}s`;
+      }, 1000);
+    }
+
+    function countDots() {
+      totalDotsOnLevel = levels[currentLevel].layout.filter(v => v === 0).length;
+    }
+
+    function startGhosts() {
+      stopGhosts();
+      const difficulty = parseInt(difficultySelect.value, 10);
+      ghostTimers = ghostIndices.map((_, i) => setInterval(() => moveGhost(i), difficulty));
+    }
+
+    function stopGhosts() {
+      ghostTimers.forEach(timer => clearInterval(timer));
+      ghostTimers = [];
+    }
+
+    function startGame() {
+      menu.style.display = 'none';
+      game.style.display = 'grid';
+      scoreDisplay.style.display = 'block';
+      timerDisplay.style.display = 'block';
+      buttonsDiv.style.display = 'none';
+      restartBtn.style.display = 'none';
+      restartGameBtn.style.display = 'none';
+
+      score = 0;
+      seconds = 0;
+      const level = levels[currentLevel];
+      pacmanIndex = level.pacmanStart;
+      ghostIndices = [...level.ghostsStart];
+      scoreDisplay.textContent = 'Score: 0';
+      timerDisplay.textContent = 'Time: 0s';
+
+      countDots();
+      drawGrid();
+
+      document.addEventListener('keydown', movePacman);
+      startGhosts();
+      startTimer();
+    }
+
+    function returnToMenu() {
+      document.removeEventListener('keydown', movePacman);
+      clearInterval(gameTimer);
+      stopGhosts();
+      menu.style.display = 'flex';
+      game.style.display = 'none';
+      scoreDisplay.style.display = 'none';
+      timerDisplay.style.display = 'none';
+      buttonsDiv.style.display = 'none';
+      restartBtn.style.display = 'none';
+      restartGameBtn.style.display = 'none';
+    }
+
+    function newGame() {
+      restartBtn.style.display = 'none';
+      restartGameBtn.style.display = 'none';
+      buttonsDiv.style.display = 'none';
+
+      score = 0;
+      seconds = 0;
+      const level = levels[currentLevel];
+      pacmanIndex = level.pacmanStart;
+      ghostIndices = [...level.ghostsStart];
+      scoreDisplay.textContent = 'Score: 0';
+      timerDisplay.textContent = 'Time: 0s';
+
+      countDots();
+      drawGrid();
+
+      document.removeEventListener('keydown', movePacman);
+      clearInterval(gameTimer);
+      stopGhosts();
+
+      document.addEventListener('keydown', movePacman);
+      startGhosts();
+      startTimer();
+    }
+
+    function selectLevel(n) {
+      currentLevel = n;
+      updateLevelButtons();
+      drawLevelPreview();
+    }
+
+    // Создаем кнопки уровней динамически
+    function createLevelButtons() {
+      levels.forEach((lvl, i) => {
+        const btn = document.createElement('button');
+        btn.textContent = `Level ${i + 1}`;
+        btn.addEventListener('click', () => selectLevel(i));
+        levelButtonsDiv.appendChild(btn);
+      });
+      updateLevelButtons();
+    }
+
+    // Обновляем стиль выбранной кнопки
+    function updateLevelButtons() {
+      const buttons = levelButtonsDiv.querySelectorAll('button');
+      buttons.forEach((btn, i) => {
+        btn.classList.toggle('selected', i === currentLevel);
+      });
+    }
+
+    // Рисуем превью уровня
+    function drawLevelPreview() {
+      levelPreviewDiv.innerHTML = '';
+      const layout = levels[currentLevel].layout;
+      layout.forEach(val => {
+        const cell = document.createElement('div');
+        cell.classList.add('preview-cell');
+        if (val === 1) cell.classList.add('preview-wall');
+        else if (val === 0) cell.classList.add('preview-dot');
+        levelPreviewDiv.appendChild(cell);
+      });
+    }
+
+    // Инициализация меню
+    createLevelButtons();
+    drawLevelPreview();
+
+  </script>
+</body>
+</html>
